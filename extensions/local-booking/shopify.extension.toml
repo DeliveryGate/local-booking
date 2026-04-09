@@ -1,0 +1,9 @@
+api_version = "2026-07"
+
+[[extensions]]
+type = "theme"
+name = "Local Booking"
+handle = "local-booking"
+
+[[extensions.targeting]]
+target = "section"

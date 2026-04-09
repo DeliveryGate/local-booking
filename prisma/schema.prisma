@@ -1,0 +1,81 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Session {
+  id          String    @id
+  shop        String
+  state       String
+  isOnline    Boolean   @default(false)
+  scope       String?
+  expires     DateTime?
+  accessToken String
+  userId      BigInt?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model MerchantPlan {
+  id                 String   @id @default(cuid())
+  shop               String   @unique
+  plan               String   @default("free")
+  subscriptionId     String?
+  locationAddress    String   @default("")
+  locationMapsUrl    String   @default("")
+  locationWazeUrl    String   @default("")
+  overnightEnabled   Boolean  @default(false)
+  trustMessages      String   @default("[]")
+  pickupInstructions String   @default("")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ServiceType {
+  id        String  @id @default(cuid())
+  shop      String
+  name      String
+  pricePerDay Float
+  icon      String  @default("🧳")
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
+
+model AddOn {
+  id     String  @id @default(cuid())
+  shop   String
+  name   String
+  price  Float
+  paidAt String  @default("online")
+  active Boolean @default(true)
+}
+
+model TimeSlotConfig {
+  id               String @id @default(cuid())
+  shop             String @unique
+  dropoffSlots     String @default("[]")
+  collectionSlots  String @default("[]")
+  operatingHours   String @default("{}")
+  slotCapacity     Int    @default(10)
+}
+
+model Booking {
+  id              String   @id @default(cuid())
+  shop            String
+  shopifyOrderId  String?
+  services        String   @default("{}")
+  addOns          String   @default("[]")
+  dropoffDate     String
+  dropoffTime     String
+  collectionDate  String
+  collectionTime  String
+  overnight       Boolean  @default(false)
+  totalPrice      Float
+  status          String   @default("pending")
+  createdAt       DateTime @default(now())
+}

@@ -1,0 +1,930 @@
+{% comment %}
+Local Booking — Service and Slot Booking Widget
+App: Local Booking by SaltCore (saltai.app)
+Fetches live config from the app backend, renders:
+  - Service quantity selectors with per-item pricing
+  - Optional add-ons
+  - Live price calculation
+  - Drop-off and collection date/time slot pickers
+  - Overnight toggle
+  - Trust messaging
+  - Location details with Maps/Waze links
+  - FAQ accordion
+  - Adds booking to Shopify cart via /cart/add.js
+{% endcomment %}
+
+{% if block.settings.app_url != blank %}
+  {% assign lb_api = block.settings.app_url | append: '/api/config' %}
+{% else %}
+  {% assign lb_api = '' %}
+{% endif %}
+
+<section id="lb-booking" class="lb-booking" {{ block.shopify_attributes }}>
+  <div class="lb-wrap">
+
+    {%- if block.settings.heading != blank -%}
+      <h2 class="lb-heading">{{ block.settings.heading }}</h2>
+    {%- endif -%}
+
+    {%- if block.settings.intro != blank -%}
+      <div class="lb-intro">{{ block.settings.intro }}</div>
+    {%- endif -%}
+
+    <!-- Loading state -->
+    <div id="lb-loading" class="lb-loading" aria-live="polite">
+      <span>Loading booking options…</span>
+    </div>
+
+    <!-- Error state -->
+    <div id="lb-error" class="lb-error" hidden>
+      <p>Unable to load booking options. Please refresh the page or contact us directly.</p>
+    </div>
+
+    <!-- Main booking form (shown after config loads) -->
+    <form id="lb-form" class="lb-form" novalidate hidden>
+
+      <!-- Trust messages -->
+      <div id="lb-trust" class="lb-trust" hidden></div>
+
+      <!-- Services section -->
+      <fieldset class="lb-field">
+        <legend class="lb-legend">{{ block.settings.services_label | default: 'Select services' }}</legend>
+        <div id="lb-services-list" class="lb-grid lb-grid--two"></div>
+      </fieldset>
+
+      <!-- Add-ons section -->
+      <fieldset id="lb-addons-section" class="lb-field" hidden>
+        <legend class="lb-legend">{{ block.settings.addons_label | default: 'Optional add-ons' }}</legend>
+        <div id="lb-addons-list" class="lb-grid lb-grid--two"></div>
+      </fieldset>
+
+      <!-- Date & Time pickers -->
+      <fieldset class="lb-field">
+        <legend class="lb-legend">{{ block.settings.slots_label | default: 'Choose drop-off and collection' }}</legend>
+
+        <div class="lb-grid lb-grid--two">
+          <label class="lb-date-label">
+            <span>Drop-off date</span>
+            <input type="date" id="lb-dropoff-date" class="lb-date-input" required>
+          </label>
+          <label class="lb-date-label">
+            <span>Drop-off time</span>
+            <select id="lb-dropoff-time" class="lb-select" required>
+              <option value="">— select time —</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Overnight toggle (hidden until config loads; only shown if enabled) -->
+        <div id="lb-overnight-wrap" class="lb-overnight-wrap" hidden>
+          <label class="lb-toggle">
+            <input type="checkbox" id="lb-overnight" class="lb-toggle-input">
+            <span class="lb-toggle-label">{{ block.settings.overnight_label | default: 'Overnight storage (collect a different day)' }}</span>
+          </label>
+        </div>
+
+        <div class="lb-grid lb-grid--two" style="margin-top:12px;">
+          <label class="lb-date-label">
+            <span>Collection date</span>
+            <input type="date" id="lb-collection-date" class="lb-date-input" required>
+          </label>
+          <label class="lb-date-label">
+            <span>Collection time</span>
+            <select id="lb-collection-time" class="lb-select" required>
+              <option value="">— select time —</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <!-- Pricing summary -->
+      <div class="lb-totals">
+        <div class="lb-total-row">Services: <strong id="lb-svc-sub">{{ block.settings.currency_symbol | default: '$' }}0.00</strong></div>
+        <div id="lb-addon-row" class="lb-total-row" hidden>
+          Add-ons (pay at pickup): <strong id="lb-addon-sub">{{ block.settings.currency_symbol | default: '$' }}0.00</strong>
+        </div>
+        <div class="lb-total-row lb-grand-row">
+          Total online: <strong id="lb-grand">{{ block.settings.currency_symbol | default: '$' }}0.00</strong>
+        </div>
+      </div>
+
+      <!-- Pickup instructions -->
+      <div id="lb-pickup-box" class="lb-pickup-box" hidden></div>
+
+      <!-- Submit -->
+      <div class="lb-actions">
+        <button type="submit" id="lb-submit" class="lb-btn lb-btn--primary" aria-busy="false">
+          {{ block.settings.cta_label | default: 'Add to cart' }}
+        </button>
+        <span id="lb-status" class="lb-status" role="status" aria-live="polite"></span>
+      </div>
+
+    </form>
+
+    <!-- Location block -->
+    <div id="lb-location" class="lb-location" hidden>
+      <div class="lb-location-inner">
+        <span class="lb-location-icon">📍</span>
+        <div>
+          <p id="lb-location-address" class="lb-location-address"></p>
+          <div class="lb-location-links" id="lb-location-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAQ accordion -->
+    {%- assign has_faqs = false -%}
+    {%- for block in section.blocks -%}
+      {%- if block.type == 'faq' -%}{%- assign has_faqs = true -%}{%- endif -%}
+    {%- endfor -%}
+
+    {%- if has_faqs -%}
+    <div class="lb-faqs">
+      <h3 class="lb-faqs-heading">{{ block.settings.faq_heading | default: 'Frequently Asked Questions' }}</h3>
+      <div class="lb-faq-list">
+        {%- for b in section.blocks -%}
+          {%- if b.type == 'faq' -%}
+          <details class="lb-faq" {{ b.shopify_attributes }}>
+            <summary class="lb-faq-q">{{ b.settings.question }}</summary>
+            <p class="lb-faq-a">{{ b.settings.answer }}</p>
+          </details>
+          {%- endif -%}
+        {%- endfor -%}
+      </div>
+    </div>
+    {%- endif -%}
+
+  </div>
+</section>
+
+<style>
+/* ── Reset & base ── */
+#lb-booking {
+  --lb-accent: #309842;
+  --lb-bg: #f9faf9;
+  --lb-border: #dfe8d9;
+  --lb-radius: 14px;
+  --lb-shadow: 0 4px 16px rgba(48,152,66,0.07);
+  font-family: inherit;
+  color: inherit;
+}
+#lb-booking * { box-sizing: border-box; }
+
+.lb-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 8px 16px 40px;
+}
+
+.lb-heading {
+  margin: 0 0 8px;
+  font-weight: 900;
+  font-size: clamp(22px, 2.5vw, 30px);
+  line-height: 1.2;
+}
+
+.lb-intro {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.65;
+  opacity: .85;
+}
+
+/* ── Loading / error ── */
+.lb-loading {
+  padding: 24px;
+  text-align: center;
+  opacity: .7;
+  font-size: 15px;
+}
+.lb-error {
+  background: #fff3f3;
+  border: 1px solid #f5c6c6;
+  border-radius: var(--lb-radius);
+  padding: 16px;
+  color: #c0392b;
+}
+
+/* ── Form ── */
+.lb-form {
+  background: var(--lb-bg);
+  border: 1px solid var(--lb-border);
+  border-radius: var(--lb-radius);
+  padding: 20px;
+  box-shadow: var(--lb-shadow);
+}
+
+.lb-field {
+  border: none;
+  padding: 0;
+  margin: 0 0 20px;
+}
+
+.lb-legend {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 12px;
+  display: block;
+}
+
+/* ── Trust banner ── */
+.lb-trust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.lb-trust-pill {
+  background: rgba(48,152,66,0.1);
+  border: 1px solid rgba(48,152,66,0.25);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lb-accent);
+}
+
+/* ── Grid ── */
+.lb-grid { display: grid; gap: 12px; }
+.lb-grid--two { grid-template-columns: 1fr 1fr; }
+@media (max-width: 620px) { .lb-grid--two { grid-template-columns: 1fr; } }
+
+/* ── Service / add-on items ── */
+.lb-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--lb-border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  gap: 12px;
+}
+.lb-item-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+.lb-item-icon { font-size: 20px; flex-shrink: 0; }
+.lb-item-name { flex: 1; min-width: 0; }
+.lb-item-price { font-size: 13px; color: var(--lb-accent); font-weight: 700; white-space: nowrap; }
+.lb-item-note { display: block; font-size: 11px; font-weight: 400; opacity: .7; }
+.lb-qty-input {
+  width: 72px;
+  padding: 7px 10px;
+  border: 1px solid var(--lb-border);
+  border-radius: 10px;
+  font: inherit;
+  text-align: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+/* ── Date/time inputs ── */
+.lb-date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.lb-date-input, .lb-select {
+  padding: 8px 12px;
+  border: 1px solid var(--lb-border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+}
+
+/* ── Overnight toggle ── */
+.lb-overnight-wrap { margin: 14px 0 0; }
+.lb-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.lb-toggle-input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--lb-accent); }
+
+/* ── Totals ── */
+.lb-totals {
+  background: rgba(48,152,66,0.06);
+  border: 1px solid rgba(48,152,66,0.15);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 16px 0;
+  display: grid;
+  gap: 6px;
+}
+.lb-total-row { font-size: 14px; }
+.lb-grand-row { font-size: 16px; font-weight: 800; }
+
+/* ── Pickup box ── */
+.lb-pickup-box {
+  background: #fff;
+  border: 1px dashed var(--lb-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+/* ── Actions ── */
+.lb-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.lb-btn {
+  padding: 10px 22px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 2px solid var(--lb-accent);
+  transition: background .15s, color .15s;
+}
+.lb-btn--primary {
+  background: #fff;
+  color: var(--lb-accent);
+}
+.lb-btn--primary:hover { background: var(--lb-accent); color: #fff; }
+.lb-btn--primary[aria-busy="true"] { opacity: .65; cursor: progress; }
+.lb-status { font-size: 14px; opacity: .85; }
+
+/* ── Location ── */
+.lb-location {
+  margin: 24px 0 0;
+  background: var(--lb-bg);
+  border: 1px solid var(--lb-border);
+  border-radius: var(--lb-radius);
+  padding: 18px 20px;
+  box-shadow: var(--lb-shadow);
+}
+.lb-location-inner { display: flex; gap: 14px; align-items: flex-start; }
+.lb-location-icon { font-size: 28px; flex-shrink: 0; }
+.lb-location-address { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.lb-location-links { display: flex; gap: 10px; flex-wrap: wrap; }
+.lb-location-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--lb-accent);
+  border-radius: 8px;
+  color: var(--lb-accent);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.lb-location-link:hover { background: var(--lb-accent); color: #fff; }
+
+/* ── FAQ ── */
+.lb-faqs {
+  margin-top: 32px;
+}
+.lb-faqs-heading {
+  font-size: 20px;
+  font-weight: 900;
+  margin: 0 0 16px;
+  text-align: center;
+}
+.lb-faq-list { display: grid; gap: 12px; }
+.lb-faq {
+  background: var(--lb-bg);
+  border: 1px solid var(--lb-border);
+  border-radius: var(--lb-radius);
+  padding: 0;
+  overflow: hidden;
+  box-shadow: var(--lb-shadow);
+}
+.lb-faq-q {
+  list-style: none;
+  padding: 16px 20px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+}
+.lb-faq-q::-webkit-details-marker { display: none; }
+.lb-faq-q::after { content: '+'; font-size: 18px; font-weight: 400; flex-shrink: 0; margin-left: 12px; }
+.lb-faq[open] > .lb-faq-q::after { content: '−'; }
+.lb-faq-a {
+  margin: 0;
+  padding: 0 20px 16px;
+  font-size: 14px;
+  line-height: 1.65;
+  opacity: .85;
+  border-top: 1px solid var(--lb-border);
+  padding-top: 14px;
+}
+
+@media (max-width: 480px) {
+  .lb-wrap { padding: 8px 10px 32px; }
+  .lb-form { padding: 14px; }
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  var APP_URL = {{ block.settings.app_url | json }};
+  var SHOP    = {{ shop.permanent_domain | json }};
+  var SYMBOL  = {{ block.settings.currency_symbol | default: '$' | json }};
+
+  if (!APP_URL) {
+    document.getElementById('lb-loading').hidden = true;
+    document.getElementById('lb-error').hidden = false;
+    document.getElementById('lb-error').querySelector('p').textContent =
+      'Booking widget not configured. Please set the App URL in theme settings.';
+    return;
+  }
+
+  // ── State ──
+  var config = null;       // full config from /api/config
+  var services = [];       // [{id, name, pricePerDay, icon}]
+  var addOns   = [];       // [{id, name, price, paidAt}]
+  var qtyMap   = {};       // {serviceId: qty}
+  var aoMap    = {};       // {addOnId: qty (0 or 1 for toggle)}
+
+  // ── DOM helpers ──
+  var $ = function(id) { return document.getElementById(id); };
+
+  function toMoney(n) { return SYMBOL + Number(n || 0).toFixed(2); }
+  function safeInt(v) { var n = parseInt(v || '0', 10); return isNaN(n) || n < 0 ? 0 : n; }
+
+  // ── Fetch config ──
+  fetch(APP_URL + '/api/config?shop=' + SHOP, { credentials: 'omit' })
+    .then(function(r) { return r.ok ? r.json() : Promise.reject('config fetch failed'); })
+    .then(function(cfg) {
+      config = cfg;
+      services = cfg.services || [];
+      addOns   = cfg.addOns   || [];
+      buildWidget();
+    })
+    .catch(function(err) {
+      console.warn('[LocalBooking] config error', err);
+      $('lb-loading').hidden = true;
+      $('lb-error').hidden   = false;
+    });
+
+  function buildWidget() {
+    // Trust messages
+    if (config.trustMessages && config.trustMessages.length) {
+      var trustEl = $('lb-trust');
+      trustEl.innerHTML = config.trustMessages.map(function(m) {
+        return '<span class="lb-trust-pill">' + esc(m) + '</span>';
+      }).join('');
+      trustEl.hidden = false;
+    }
+
+    // Services
+    var svcList = $('lb-services-list');
+    if (services.length === 0) {
+      svcList.innerHTML = '<p style="opacity:.7;font-size:14px;">No services configured yet.</p>';
+    } else {
+      svcList.innerHTML = services.map(function(s) {
+        qtyMap[s.id] = 0;
+        return '<div class="lb-item">' +
+          '<label class="lb-item-label" for="lb-svc-' + esc(s.id) + '">' +
+            '<span class="lb-item-icon">' + esc(s.icon || '🧳') + '</span>' +
+            '<span class="lb-item-name">' + esc(s.name) +
+              '<span class="lb-item-price"> ' + toMoney(s.pricePerDay) + '/day</span>' +
+            '</span>' +
+          '</label>' +
+          '<input class="lb-qty-input" id="lb-svc-' + esc(s.id) + '" ' +
+            'type="number" min="0" step="1" value="0" inputmode="numeric" data-svc-id="' + esc(s.id) + '">' +
+        '</div>';
+      }).join('');
+    }
+
+    // Add-ons
+    if (addOns.length) {
+      var aoList = $('lb-addons-list');
+      aoList.innerHTML = addOns.map(function(a) {
+        aoMap[a.id] = 0;
+        var note = a.paidAt === 'pickup' ? 'pay at pickup' : 'charged online';
+        return '<div class="lb-item">' +
+          '<label class="lb-item-label" for="lb-ao-' + esc(a.id) + '">' +
+            '<span class="lb-item-name">' + esc(a.name) +
+              '<span class="lb-item-price"> ' + toMoney(a.price) +
+                '<span class="lb-item-note">(' + note + ')</span>' +
+              '</span>' +
+            '</span>' +
+          '</label>' +
+          '<input class="lb-qty-input" id="lb-ao-' + esc(a.id) + '" ' +
+            'type="number" min="0" step="1" value="0" inputmode="numeric" data-ao-id="' + esc(a.id) + '">' +
+        '</div>';
+      }).join('');
+      $('lb-addons-section').hidden = false;
+    }
+
+    // Time slots
+    populateSelect($('lb-dropoff-time'), config.dropoffSlots || []);
+    populateSelect($('lb-collection-time'), config.collectionSlots || []);
+
+    // Default drop-off date = today
+    var today = new Date().toISOString().slice(0, 10);
+    $('lb-dropoff-date').value = today;
+    $('lb-collection-date').value = today;
+    $('lb-collection-date').min = today;
+
+    // Overnight toggle
+    if (config.overnightEnabled) {
+      $('lb-overnight-wrap').hidden = false;
+      $('lb-overnight').addEventListener('change', function() {
+        var dropDate = $('lb-dropoff-date').value;
+        if (this.checked && dropDate) {
+          var next = new Date(dropDate);
+          next.setDate(next.getDate() + 1);
+          $('lb-collection-date').min = next.toISOString().slice(0, 10);
+          $('lb-collection-date').value = next.toISOString().slice(0, 10);
+        } else {
+          $('lb-collection-date').min = dropDate || today;
+          $('lb-collection-date').value = dropDate || today;
+        }
+        calcTotal();
+      });
+    }
+    $('lb-dropoff-date').addEventListener('change', function() {
+      var v = this.value;
+      if (!$('lb-overnight').checked) {
+        $('lb-collection-date').min = v;
+        if ($('lb-collection-date').value < v) $('lb-collection-date').value = v;
+      }
+      calcTotal();
+    });
+
+    // Pickup instructions
+    if (config.pickupInstructions) {
+      var pbox = $('lb-pickup-box');
+      pbox.textContent = config.pickupInstructions;
+      pbox.hidden = false;
+    }
+
+    // Location
+    if (config.locationAddress) {
+      $('lb-location-address').textContent = config.locationAddress;
+      var links = $('lb-location-links');
+      if (config.locationMapsUrl) {
+        links.innerHTML += '<a href="' + esc(config.locationMapsUrl) + '" target="_blank" rel="noopener" class="lb-location-link">🗺 Google Maps</a>';
+      }
+      if (config.locationWazeUrl) {
+        links.innerHTML += '<a href="' + esc(config.locationWazeUrl) + '" target="_blank" rel="noopener" class="lb-location-link">🚗 Waze</a>';
+      }
+      $('lb-location').hidden = false;
+    }
+
+    // Events
+    $('lb-services-list').addEventListener('input', function(e) {
+      var id = e.target.dataset.svcId;
+      if (id) { qtyMap[id] = safeInt(e.target.value); calcTotal(); }
+    });
+    if ($('lb-addons-list')) {
+      $('lb-addons-list').addEventListener('input', function(e) {
+        var id = e.target.dataset.aoId;
+        if (id) { aoMap[id] = safeInt(e.target.value); calcTotal(); }
+      });
+    }
+    $('lb-collection-date').addEventListener('change', calcTotal);
+    $('lb-collection-time').addEventListener('change', calcTotal);
+
+    calcTotal();
+
+    // Show form
+    $('lb-loading').hidden = true;
+    $('lb-form').hidden    = false;
+
+    // Submit
+    $('lb-form').addEventListener('submit', handleSubmit);
+  }
+
+  function populateSelect(sel, slots) {
+    sel.innerHTML = '<option value="">— select time —</option>';
+    slots.forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = t; opt.textContent = t;
+      sel.appendChild(opt);
+    });
+  }
+
+  function getDays() {
+    var d1 = $('lb-dropoff-date').value;
+    var d2 = $('lb-collection-date').value;
+    if (!d1 || !d2) return 1;
+    var diff = (new Date(d2) - new Date(d1)) / 86400000;
+    return Math.max(1, Math.round(diff) || 1);
+  }
+
+  function calcTotal() {
+    var days = getDays();
+    var svcTotal = 0;
+    services.forEach(function(s) {
+      svcTotal += (qtyMap[s.id] || 0) * s.pricePerDay * days;
+    });
+    var aoPickup = 0, aoOnline = 0;
+    addOns.forEach(function(a) {
+      var qty = aoMap[a.id] || 0;
+      if (a.paidAt === 'pickup') aoPickup += qty * a.price;
+      else aoOnline += qty * a.price;
+    });
+    $('lb-svc-sub').textContent    = toMoney(svcTotal);
+    $('lb-addon-sub').textContent  = toMoney(aoPickup);
+    $('lb-grand').textContent      = toMoney(svcTotal + aoOnline);
+    if (aoPickup > 0) {
+      $('lb-addon-row').hidden = false;
+    }
+  }
+
+  // ── Submit: post booking record, then add to Shopify cart ──
+  function handleSubmit(e) {
+    e.preventDefault();
+
+    var dropoffDate    = $('lb-dropoff-date').value;
+    var dropoffTime    = $('lb-dropoff-time').value;
+    var collectionDate = $('lb-collection-date').value;
+    var collectionTime = $('lb-collection-time').value;
+    var overnight      = $('lb-overnight').checked;
+
+    // Validation
+    var totalItems = 0;
+    services.forEach(function(s) { totalItems += (qtyMap[s.id] || 0); });
+    if (totalItems === 0) {
+      setStatus('Please select at least one service item.'); return;
+    }
+    if (!dropoffDate || !dropoffTime) {
+      setStatus('Please choose a drop-off date and time.'); return;
+    }
+    if (!collectionDate || !collectionTime) {
+      setStatus('Please choose a collection date and time.'); return;
+    }
+
+    setLoading(true);
+    setStatus('Adding to cart…');
+
+    var days = getDays();
+
+    // Build cart items array — one item per service type with properties
+    var items = [];
+    var servicesSummary = [];
+    services.forEach(function(s) {
+      var qty = qtyMap[s.id] || 0;
+      if (qty === 0) return;
+      servicesSummary.push(s.name + ' x' + qty);
+      // Each service needs a Shopify variant ID.
+      // Merchants must enter their Shopify product variant IDs in theme block settings.
+      var variantKey = 'variant_' + s.id;
+      var variantId = block && block.settings && block.settings[variantKey];
+      if (!variantId) return; // skip if not configured
+      var addonNotes = [];
+      addOns.forEach(function(a) {
+        var aqty = aoMap[a.id] || 0;
+        if (!aqty) return;
+        addonNotes.push(a.name + ' x' + aqty + ' (' + (a.paidAt === 'pickup' ? 'pay at pickup' : 'online') + ')');
+      });
+      items.push({
+        id: variantId,
+        quantity: qty * days,
+        properties: {
+          'Service':        s.name,
+          'Days':           String(days),
+          'Drop-off':       dropoffDate + ' ' + dropoffTime,
+          'Collection':     collectionDate + ' ' + collectionTime,
+          'Overnight':      overnight ? 'Yes' : 'No',
+          'Add-ons':        addonNotes.length ? addonNotes.join(' | ') : 'None',
+        }
+      });
+    });
+
+    // If no variant IDs configured, fall back: store booking on backend then redirect to cart
+    if (items.length === 0) {
+      // Post booking to app backend (no Shopify cart item — merchant has not linked products)
+      postBookingToBackend(dropoffDate, dropoffTime, collectionDate, collectionTime, overnight, days, function(err) {
+        setLoading(false);
+        if (err) { setStatus('Error recording booking. Please try again.'); return; }
+        setStatus('Booking recorded. Proceeding to checkout…');
+        window.setTimeout(function() { window.location.href = '/checkout'; }, 1200);
+      });
+      return;
+    }
+
+    // Add to Shopify cart
+    fetch('/cart/add.js', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ items: items }),
+    })
+    .then(function(r) { return r.ok ? r.json() : Promise.reject('cart error'); })
+    .then(function() {
+      // Also update cart totals for theme header
+      return fetch('/cart.js', { credentials: 'same-origin' });
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(cart) {
+      document.dispatchEvent(new CustomEvent('cart:updated', { detail: cart }));
+      setStatus('Added to cart!');
+      // Reset quantities
+      services.forEach(function(s) { qtyMap[s.id] = 0; });
+      $('lb-services-list').querySelectorAll('.lb-qty-input').forEach(function(inp) { inp.value = '0'; });
+      calcTotal();
+      window.setTimeout(function() { setStatus(''); }, 2500);
+    })
+    .catch(function() {
+      setStatus('Error adding to cart. Please try again.');
+    })
+    .finally(function() { setLoading(false); });
+  }
+
+  function postBookingToBackend(ddDate, ddTime, colDate, colTime, overnight, days, cb) {
+    var servicesPayload = {};
+    services.forEach(function(s) {
+      if (qtyMap[s.id]) servicesPayload[s.id] = { qty: qtyMap[s.id], pricePerDay: s.pricePerDay };
+    });
+    var addOnsPayload = [];
+    addOns.forEach(function(a) { if (aoMap[a.id]) addOnsPayload.push(a.id); });
+    var total = 0;
+    services.forEach(function(s) { total += (qtyMap[s.id] || 0) * s.pricePerDay * days; });
+    fetch(APP_URL + '/api/bookings?shop=' + SHOP, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shop: SHOP,
+        services: servicesPayload,
+        addOns: addOnsPayload,
+        dropoffDate: ddDate, dropoffTime: ddTime,
+        collectionDate: colDate, collectionTime: colTime,
+        overnight: overnight,
+        totalPrice: total,
+      }),
+    })
+    .then(function(r) { cb(r.ok ? null : 'error'); })
+    .catch(function() { cb('error'); });
+  }
+
+  function setLoading(on) {
+    var btn = $('lb-submit');
+    btn.setAttribute('aria-busy', on ? 'true' : 'false');
+    btn.disabled = Boolean(on);
+  }
+
+  function setStatus(msg) {
+    var el = $('lb-status');
+    if (el) el.textContent = msg || '';
+  }
+
+  function esc(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Local Booking Widget",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "App Connection"
+    },
+    {
+      "type": "url",
+      "id": "app_url",
+      "label": "App backend URL",
+      "info": "The URL of your Local Booking app backend (e.g. https://your-app.up.railway.app)"
+    },
+    {
+      "type": "header",
+      "content": "Content"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Book Your Service"
+    },
+    {
+      "type": "richtext",
+      "id": "intro",
+      "label": "Intro text",
+      "default": "<p>Select your services, choose a drop-off and collection time, and check out securely online.</p>"
+    },
+    {
+      "type": "text",
+      "id": "services_label",
+      "label": "Services section label",
+      "default": "Select services"
+    },
+    {
+      "type": "text",
+      "id": "addons_label",
+      "label": "Add-ons section label",
+      "default": "Optional add-ons"
+    },
+    {
+      "type": "text",
+      "id": "slots_label",
+      "label": "Time slots section label",
+      "default": "Choose drop-off and collection"
+    },
+    {
+      "type": "text",
+      "id": "overnight_label",
+      "label": "Overnight toggle label",
+      "default": "Overnight storage (collect a different day)"
+    },
+    {
+      "type": "text",
+      "id": "faq_heading",
+      "label": "FAQ section heading",
+      "default": "Frequently Asked Questions"
+    },
+    {
+      "type": "text",
+      "id": "cta_label",
+      "label": "Add to cart button text",
+      "default": "Add to cart"
+    },
+    {
+      "type": "text",
+      "id": "currency_symbol",
+      "label": "Currency symbol",
+      "default": "$"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "faq",
+      "name": "FAQ Item",
+      "settings": [
+        {
+          "type": "text",
+          "id": "question",
+          "label": "Question",
+          "default": "Your question here?"
+        },
+        {
+          "type": "textarea",
+          "id": "answer",
+          "label": "Answer",
+          "default": "Your answer here."
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Local Booking Widget",
+      "blocks": [
+        {
+          "type": "faq",
+          "settings": {
+            "question": "Do I need to book in advance?",
+            "answer": "You can book online or walk in. Online bookings reserve your slot and speed up check-in."
+          }
+        },
+        {
+          "type": "faq",
+          "settings": {
+            "question": "How do I collect my items?",
+            "answer": "Show your order confirmation at the desk during your chosen collection window. Our team will have everything ready."
+          }
+        },
+        {
+          "type": "faq",
+          "settings": {
+            "question": "Is my booking secure?",
+            "answer": "Yes. All items are tagged, logged, and held in our staffed, monitored premises."
+          }
+        },
+        {
+          "type": "faq",
+          "settings": {
+            "question": "Can I cancel or change my booking?",
+            "answer": "Please contact us as soon as possible. We'll do our best to accommodate changes subject to availability."
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}
